@@ -2,7 +2,7 @@ import { Heart } from "lucide-react";
 
 // This link is public by design — see docs/RESUME_ATS_CHECKER_PLAN.md §11.
 // Replace with your own PayPal.me link (or swap for a hosted PayPal Donate button ID).
-const DONATE_URL = "https://paypal.me/your-paypal-username";
+const DONATE_URL = "https://streamlabs.com/artofreyes/tip";
 
 export default function DonateButton() {
   return (
