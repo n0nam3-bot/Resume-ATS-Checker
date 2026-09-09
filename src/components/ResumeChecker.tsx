@@ -10,6 +10,7 @@ import FeedbackList from "./FeedbackList";
 import DiffView from "./DiffView";
 import DonateButton from "./DonateButton";
 import { parseResumeFile } from "@/lib/parseResume";
+import { parseJsonResponse } from "@/lib/safeFetchJson";
 import type { AnalysisResult, FormatMeta } from "@/lib/types";
 
 // @react-pdf/renderer (pulled in by DownloadButton) resolves differently between
@@ -67,8 +68,7 @@ export default function ResumeChecker() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: jobUrl }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Couldn't fetch that job posting.");
+        const data = await parseJsonResponse<{ text: string }>(res);
         resolvedJobText = data.text;
       }
 
@@ -77,8 +77,7 @@ export default function ResumeChecker() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ resumeText: parsedResumeText, jobText: resolvedJobText, meta }),
       });
-      const analyzeData = await analyzeRes.json();
-      if (!analyzeRes.ok) throw new Error(analyzeData.error || "Couldn't analyze the resume.");
+      const analyzeData = await parseJsonResponse<{ analysis: AnalysisResult }>(analyzeRes);
 
       setResumeText(parsedResumeText);
       setFormatMeta(meta);
@@ -106,8 +105,12 @@ export default function ResumeChecker() {
           userKey: byokKey ? { provider: byokProvider, key: byokKey } : undefined,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Couldn't rewrite the resume.");
+      const data = await parseJsonResponse<{
+        rewrittenResume: string;
+        usedAI: boolean;
+        aiProvider?: string;
+        notes: string[];
+      }>(res);
 
       setRewritten(data.rewrittenResume);
       setEditedText(data.rewrittenResume);
