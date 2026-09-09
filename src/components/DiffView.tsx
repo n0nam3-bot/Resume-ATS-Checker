@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { computeDiff } from "@/lib/diffResume";
 
 interface DiffViewProps {
@@ -11,6 +11,26 @@ interface DiffViewProps {
 export default function DiffView({ original, revised }: DiffViewProps) {
   const [mobileTab, setMobileTab] = useState<"before" | "after">("after");
   const diffParts = computeDiff(original, revised);
+
+  const beforeRef = useRef<HTMLDivElement>(null);
+  const afterRef = useRef<HTMLDivElement>(null);
+  const isSyncingRef = useRef(false);
+
+  // Keep the two panels scrolled to the same position — independent scroll made it
+  // possible for the two columns to drift apart and look like content had gone
+  // missing when it hadn't (see conversation: nothing in the rewrite touches job
+  // titles/dates, so a mismatch here is a display issue, not data loss).
+  function syncScroll(source: "before" | "after") {
+    return () => {
+      if (isSyncingRef.current) return;
+      const from = source === "before" ? beforeRef.current : afterRef.current;
+      const to = source === "before" ? afterRef.current : beforeRef.current;
+      if (!from || !to) return;
+      isSyncingRef.current = true;
+      to.scrollTop = from.scrollTop;
+      isSyncingRef.current = false;
+    };
+  }
 
   const beforeContent = (
     <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-ink">
@@ -69,17 +89,25 @@ export default function DiffView({ original, revised }: DiffViewProps) {
         </div>
       </div>
 
-      {/* Desktop: side-by-side */}
+      {/* Desktop: side-by-side, scroll-synced */}
       <div className="hidden gap-4 sm:grid sm:grid-cols-2">
         <div>
           <p className="mb-2 text-sm font-medium text-ink-soft">Before</p>
-          <div className="max-h-[65vh] overflow-y-auto rounded-card border border-ink/15 bg-white/50 p-4">
+          <div
+            ref={beforeRef}
+            onScroll={syncScroll("before")}
+            className="max-h-[65vh] overflow-y-auto rounded-card border border-ink/15 bg-white/50 p-4"
+          >
             {beforeContent}
           </div>
         </div>
         <div>
           <p className="mb-2 text-sm font-medium text-ink-soft">After</p>
-          <div className="max-h-[65vh] overflow-y-auto rounded-card border border-ink/15 bg-white/50 p-4">
+          <div
+            ref={afterRef}
+            onScroll={syncScroll("after")}
+            className="max-h-[65vh] overflow-y-auto rounded-card border border-ink/15 bg-white/50 p-4"
+          >
             {afterContent}
           </div>
         </div>
