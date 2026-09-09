@@ -46,7 +46,16 @@ export async function POST(req: NextRequest) {
     clearTimeout(timeout);
 
     if (!res.ok) {
-      return NextResponse.json({ error: `The page responded with status ${res.status}.` }, { status: 502 });
+      let hint = "";
+      if (res.status === 401 || res.status === 403) {
+        hint = " This usually means the site requires a login or blocks automated requests — Indeed and LinkedIn both commonly do this. Switch to \"Paste text\" instead.";
+      } else if (res.status === 429) {
+        hint = " The site is rate-limiting requests right now — try again shortly, or use \"Paste text\".";
+      }
+      return NextResponse.json(
+        { error: `The page responded with status ${res.status}.${hint}` },
+        { status: 502 }
+      );
     }
 
     const html = await res.text();
