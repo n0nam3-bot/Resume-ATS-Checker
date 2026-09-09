@@ -13,14 +13,15 @@ interface JobPostingInputProps {
   disabled?: boolean;
 }
 
-// These sites reliably block or 401/403 server-side fetches (session/login walls, bot
-// detection) — worth telling the user up front instead of after a failed round trip.
-const KNOWN_BLOCKED_HOSTS = ["indeed.com", "linkedin.com", "glassdoor.com"];
+// These hosts reliably fail server-side fetches — either an auth/session wall (Indeed,
+// LinkedIn, Glassdoor) or a JavaScript-rendered page with no content in the raw HTML
+// (Google's Jobs share links). Different causes, same fix, so one list is enough.
+const KNOWN_PROBLEM_HOSTS = ["indeed.com", "linkedin.com", "glassdoor.com", "share.google"];
 
-function isLikelyBlocked(rawUrl: string): boolean {
+function isLikelyUnreadable(rawUrl: string): boolean {
   try {
     const hostname = new URL(rawUrl).hostname.replace(/^www\./, "");
-    return KNOWN_BLOCKED_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+    return KNOWN_PROBLEM_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
   } catch {
     return false;
   }
@@ -88,14 +89,14 @@ export default function JobPostingInput({
           className="w-full resize-y rounded-card border border-ink/25 bg-white/60 px-3 py-2.5 text-sm text-ink placeholder:text-ink-soft/70 focus-visible:border-redpen"
         />
       )}
-      {localMode === "url" && isLikelyBlocked(url) && (
+      {localMode === "url" && isLikelyUnreadable(url) && (
         <p className="mt-1.5 flex items-start gap-1.5 rounded-card border border-manila-dark/40 bg-manila/20 px-3 py-2 text-xs text-ink">
           <AlertTriangle size={14} className="mt-0.5 shrink-0 text-manila-dark" aria-hidden />
-          This site usually blocks automated fetches. Switch to &quot;Paste text&quot; and copy the
-          job description in directly — it&apos;ll work every time, this won&apos;t.
+          This link usually can&apos;t be read automatically (login wall or JavaScript-rendered
+          page). Switch to &quot;Paste text&quot; and copy the job description in directly.
         </p>
       )}
-      {localMode === "url" && !isLikelyBlocked(url) && (
+      {localMode === "url" && !isLikelyUnreadable(url) && (
         <p className="mt-1.5 text-xs text-ink-soft">
           Some sites block automated fetches — if that happens, switch to &quot;Paste text&quot; instead.
         </p>
