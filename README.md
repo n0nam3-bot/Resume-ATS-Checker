@@ -48,8 +48,8 @@ The router tries them in that order and falls back automatically if one is rate-
 
 ### Before you deploy
 
-- Replace the placeholder PayPal.me link in `src/components/DonateButton.tsx` and
-  `.github/FUNDING.yml` with your own.
+- The donate link is already set to `https://streamlabs.com/artofreyes/tip` in both
+  `src/components/DonateButton.tsx` and `.github/FUNDING.yml` — update both if that ever changes.
 - Add real `public/icon-192.png` and `public/icon-512.png` files (any square PNG works) — the
   manifest references them for PWA installability; the app runs fine without them, browsers just
   won't have an icon to show.
