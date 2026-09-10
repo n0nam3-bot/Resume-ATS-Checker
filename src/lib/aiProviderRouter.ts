@@ -23,11 +23,12 @@ export interface UserSuppliedKey {
   key: string;
 }
 
-const DEFAULT_OPENROUTER_MODELS = [
-  "meta-llama/llama-3.1-8b-instruct:free",
-  "mistralai/mistral-7b-instruct:free",
-  "google/gemini-2.0-flash-exp:free",
-];
+// OpenRouter's own free-model router (released Feb 2026) auto-selects among whatever
+// specific free models are currently available, so it never goes stale the way a
+// hardcoded list of individual ":free" model slugs does — that rotation is exactly
+// what broke the original hardcoded list here. Override via OPENROUTER_MODELS if you
+// want to pin specific models instead.
+const DEFAULT_OPENROUTER_MODELS = ["openrouter/free"];
 
 function buildRewritePrompt(resumeText: string, jobText: string, missingKeywords: string[]): string {
   return `You are an expert resume editor helping a real job seeker tailor their resume to a specific job posting.
@@ -55,7 +56,7 @@ Rewritten resume:`;
 }
 
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
-  const model = process.env.GEMINI_MODEL || "gemini-2.0-flash-lite";
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
@@ -75,7 +76,7 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
 }
 
 async function callGroq(prompt: string, apiKey: string): Promise<string> {
-  const model = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
+  const model = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
