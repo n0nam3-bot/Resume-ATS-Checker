@@ -83,9 +83,10 @@ Rough steps for Vercel:
   (mammoth exposes real HTML structure); PDF detection relies on text-position clustering, which
   is a best-effort signal, not certainty — this is why the UI always says "may use a multi-column
   layout" rather than a flat claim.
-- **The downloaded PDF is a clean, single-column reflow, not a copy of your original template.**
-  This is deliberate — it's the safer ATS-parseable format — but it means visual styling from the
-  original file isn't preserved.
+- **The downloaded PDF uses its own clean, ATS-safe template, not your original file's
+  visual styling.** It infers structure (name, contact line, section headers, bold role/date
+  lines, bullets) from the plain text, so unusual formats may not classify perfectly — but it's
+  a real single-column, text-only layout with visual hierarchy, not just a plain reflow.
 - **The rate limiter is in-memory**, so it resets on a cold start and doesn't share state across
   multiple serverless instances. Fine for a small/solo project; swap in Upstash Redis or similar
   before this gets serious traffic.
