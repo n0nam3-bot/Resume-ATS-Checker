@@ -27,6 +27,32 @@ function isLikelyUnreadable(rawUrl: string): boolean {
   }
 }
 
+// Telltale chrome from a search-results page (Google Jobs, job-board listing pages)
+// rather than a single job's description — ads, "people also ask," nav furniture.
+// Scoring against this kind of text produces a meaningless result, since it's dozens
+// of unrelated jobs mixed together rather than one set of real requirements.
+const SEARCH_RESULTS_PAGE_SIGNALS = [
+  "sponsored results",
+  "people also ask",
+  "hide sponsored results",
+  "search tools",
+  "dark theme:",
+  "ai mode",
+  "short videos",
+  "see web results for",
+  "more jobs at",
+  "choose area",
+  "saved jobs",
+  "rating for",
+];
+
+function looksLikeSearchResultsPage(text: string): boolean {
+  if (text.trim().length < 200) return false;
+  const lower = text.toLowerCase();
+  const hits = SEARCH_RESULTS_PAGE_SIGNALS.filter((phrase) => lower.includes(phrase)).length;
+  return hits >= 2;
+}
+
 export default function JobPostingInput({
   mode,
   onModeChange,
@@ -99,6 +125,14 @@ export default function JobPostingInput({
       {localMode === "url" && !isLikelyUnreadable(url) && (
         <p className="mt-1.5 text-xs text-ink-soft">
           Some sites block automated fetches — if that happens, switch to &quot;Paste text&quot; instead.
+        </p>
+      )}
+      {localMode === "text" && looksLikeSearchResultsPage(text) && (
+        <p className="mt-1.5 flex items-start gap-1.5 rounded-card border border-manila-dark/40 bg-manila/20 px-3 py-2 text-xs text-ink">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-manila-dark" aria-hidden />
+          This looks like a search results page with several unrelated jobs mixed in, not one
+          job&apos;s description — scoring against it won&apos;t be meaningful. Open the specific
+          listing and paste just its description/qualifications section instead.
         </p>
       )}
     </div>
