@@ -215,6 +215,14 @@ resume-ats-checker/
 - **No fabrication, ever.** The rewrite step must only rephrase, reorganize, trim, or surface
   keywords the user's actual content already supports. It can *suggest* "you might add X skill if
   you have it," but it must never insert unverified claims.
+  **Hard-won lesson while building this**: a prompt instruction saying "never invent an employer"
+  is not sufficient on its own. A free-tier model, given a job posting almost totally unrelated to
+  the candidate's real background, fabricated two entire fake jobs — including one at the exact
+  company from the job posting — despite that explicit instruction. The working fix was a code-level
+  check (not just a prompt tweak): after generation, scan the rewritten resume's employer/company
+  lines and reject the output outright if any doesn't trace back to the original resume, falling
+  back to the safe mechanical rewrite instead. Treat this as a required component of the Auto-Fix
+  feature, not an optional enhancement — see `src/lib/fabricationGuard.ts` in the reference build.
 - **State data handling plainly in the UI**: what happens to the resume (processed and discarded,
   or sent to a third-party AI API). With a multi-provider pool (§10), say which providers are in
   rotation (e.g. "Google, Groq, or one of OpenRouter's upstream providers") since the resume text
