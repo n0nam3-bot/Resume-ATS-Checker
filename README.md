@@ -92,8 +92,13 @@ Rough steps for Vercel:
   before this gets serious traffic.
 - **Free-tier AI model names and limits change.** The defaults in `aiProviderRouter.ts` are
   reasonable as of this writing but worth checking against each provider's current docs.
-- **The AI rewrite is instructed never to fabricate experience**, but always review the diff
-  before using the output — it's a drafting aid, not a guarantee.
+- **The AI rewrite is instructed never to fabricate experience, and this is now backed by an
+  automated check** (`src/lib/fabricationGuard.ts`) that rejects any AI output referencing an
+  employer/organization name not traceable to the original resume — this was added after a
+  real free-tier model fabricated entire fake jobs despite explicit prompt instructions not to.
+  **This is a safety net, not a guarantee**: it catches invented employer names specifically, not
+  every possible fabrication (e.g. a true employer given false duties). Always review the diff
+  before using AI-rewritten output — the UI now says this prominently for exactly this reason.
 
 ## License
 
