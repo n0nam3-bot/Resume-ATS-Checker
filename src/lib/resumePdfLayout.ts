@@ -40,7 +40,22 @@ export function parseResumeForPdf(rawText: string): ResumeBlock[] {
   const cutIndex = rawText.indexOf("--- Consider adding");
   const text = (cutIndex >= 0 ? rawText.slice(0, cutIndex) : rawText).trim();
 
-  const lines = text.split("\n");
+  const rawLines = text.split("\n");
+
+  // AI output has occasionally put a bullet marker on its own line, separated from
+  // its content by a line break instead of a space — merge it back with the next
+  // line so it doesn't render as an empty bullet followed by an orphaned paragraph.
+  const lines: string[] = [];
+  for (let j = 0; j < rawLines.length; j++) {
+    const trimmed = rawLines[j].trim();
+    if (/^[-•*◦]$/.test(trimmed) && rawLines[j + 1]?.trim()) {
+      lines.push(`${trimmed} ${rawLines[j + 1].trim()}`);
+      j++;
+      continue;
+    }
+    lines.push(rawLines[j]);
+  }
+
   const blocks: ResumeBlock[] = [];
 
   // Header block: first non-empty line is the name; subsequent lines up to the next

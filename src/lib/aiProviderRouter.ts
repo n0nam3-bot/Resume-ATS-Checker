@@ -1,4 +1,5 @@
 import type { RewriteResult } from "./types";
+import { repairWordJams } from "./textRepair";
 
 /**
  * Server-only. This file must never be imported from a client component — it reads
@@ -38,6 +39,8 @@ STRICT RULES:
 - You may rephrase, reorder, tighten, and emphasize existing true content.
 - You may naturally weave in any of the "keywords to consider" below, ONLY if the resume already implies the candidate has that experience; otherwise leave it out entirely.
 - Keep the output as a plain-text resume — no markdown tables, no HTML, no commentary.
+- Always put a normal space between a job title and the date range that follows it (e.g. "Director of Compliance  August 2025 – Present", never "Director of ComplianceAugust 2025 – Present"). Some source resumes use a tab character there — treat it as a space, never delete it.
+- Always keep hyphens in compound adjectives (e.g. "cross-functional," "data-driven," "customer-focused") — never drop the hyphen and run the two words together.
 - Return ONLY the rewritten resume text. Do not include a preamble, an explanation, or code fences.
 
 JOB POSTING:
@@ -163,7 +166,9 @@ export async function rewriteWithAI(
   for (const provider of providers) {
     try {
       const raw = await provider.call(prompt);
-      const cleaned = raw.replace(/^```[\w]*\n?/, "").replace(/```\s*$/, "").trim();
+      const cleaned = repairWordJams(
+        raw.replace(/^```[\w]*\n?/, "").replace(/```\s*$/, "").trim()
+      );
       if (!cleaned) throw new Error("empty response");
       return {
         rewrittenResume: cleaned,

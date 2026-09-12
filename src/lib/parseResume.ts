@@ -6,6 +6,17 @@ export interface ParsedResume {
 }
 
 /**
+ * Word documents commonly use a literal tab character between a job title and its
+ * date range (e.g. "Director of Compliance\tAugust 2025 – Present"). Left as a raw
+ * tab, free-tier AI models have been observed dropping it entirely during rewriting
+ * rather than treating it as whitespace, jamming the two into one word. Normalizing
+ * to a plain space here means neither the AI nor the scorer ever sees a raw tab.
+ */
+function normalizeWhitespace(text: string): string {
+  return text.replace(/[\t\v\f]+/g, " ").replace(/ {2,}/g, " ");
+}
+
+/**
  * Everything here runs in the browser — the resume file itself never has to touch
  * a server just to be read. Only the extracted plain text goes to /api/analyze.
  */
@@ -80,7 +91,7 @@ async function parsePdf(file: File): Promise<ParsedResume> {
     }
   }
 
-  const text = pageTexts.join("\n\n");
+  const text = normalizeWhitespace(pageTexts.join("\n\n"));
   const wordCount = text.split(/\s+/).filter(Boolean).length;
 
   const meta: FormatMeta = {
@@ -99,10 +110,11 @@ async function parseDocx(file: File): Promise<ParsedResume> {
   const mammoth = await import("mammoth/mammoth.browser");
   const arrayBuffer = await file.arrayBuffer();
 
-  const [{ value: text }, { value: html }] = await Promise.all([
+  const [{ value: rawText }, { value: html }] = await Promise.all([
     mammoth.extractRawText({ arrayBuffer }),
     mammoth.convertToHtml({ arrayBuffer }),
   ]);
+  const text = normalizeWhitespace(rawText);
 
   const wordCount = text.split(/\s+/).filter(Boolean).length;
 
