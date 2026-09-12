@@ -1,5 +1,6 @@
 import type { RewriteResult } from "./types";
 import { repairWordJams } from "./textRepair";
+import { checkForFabrication } from "./fabricationGuard";
 
 /**
  * Server-only. This file must never be imported from a client component — it reads
@@ -38,6 +39,7 @@ STRICT RULES:
 - Never invent job titles, employers, dates, degrees, certifications, or skills the candidate did not already state.
 - You may rephrase, reorder, tighten, and emphasize existing true content.
 - You may naturally weave in any of the "keywords to consider" below, ONLY if the resume already implies the candidate has that experience; otherwise leave it out entirely.
+- If the candidate's real background has little genuine overlap with this job posting, do NOT invent a new job, employer, or skill set to bridge the gap. Present their real, true experience as favorably and relevantly as you honestly can, even if the fit stays imperfect — an honest resume that's an imperfect fit is far better than a fabricated one, and fabricating experience is a serious harm to a real person's career, not a stylistic choice.
 - Keep the output as a plain-text resume — no markdown tables, no HTML, no commentary.
 - Always put a normal space between a job title and the date range that follows it (e.g. "Director of Compliance  August 2025 – Present", never "Director of ComplianceAugust 2025 – Present"). Some source resumes use a tab character there — treat it as a space, never delete it.
 - Always keep hyphens in compound adjectives (e.g. "cross-functional," "data-driven," "customer-focused") — never drop the hyphen and run the two words together.
@@ -152,16 +154,24 @@ export function isAiConfigured(userKey?: UserSuppliedKey): boolean {
   return getConfiguredProviders(userKey).length > 0;
 }
 
+export interface RewriteAttemptResult {
+  result: RewriteResult | null;
+  /** True if every provider's output was rejected by the fabrication guard specifically
+   *  (as opposed to network/API failures) — lets the caller give an accurate message. */
+  fabricationBlocked: boolean;
+}
+
 export async function rewriteWithAI(
   resumeText: string,
   jobText: string,
   missingKeywords: string[],
   userKey?: UserSuppliedKey
-): Promise<RewriteResult | null> {
+): Promise<RewriteAttemptResult> {
   const providers = getConfiguredProviders(userKey);
-  if (providers.length === 0) return null;
+  if (providers.length === 0) return { result: null, fabricationBlocked: false };
 
   const prompt = buildRewritePrompt(resumeText, jobText, missingKeywords);
+  let fabricationBlocked = false;
 
   for (const provider of providers) {
     try {
@@ -170,11 +180,27 @@ export async function rewriteWithAI(
         raw.replace(/^```[\w]*\n?/, "").replace(/```\s*$/, "").trim()
       );
       if (!cleaned) throw new Error("empty response");
+
+      // Hard gate, not a suggestion: a model that invents an employer doesn't get
+      // shown to the user, full stop — see conversation history for why prompt
+      // instructions alone weren't a reliable enough safeguard against this.
+      const fabricationCheck = checkForFabrication(resumeText, cleaned);
+      if (fabricationCheck.suspicious) {
+        fabricationBlocked = true;
+        console.warn(
+          `[aiProviderRouter] ${provider.name} output rejected — unexplained employer name(s): ${fabricationCheck.unexplainedEmployers.join(", ")}`
+        );
+        continue;
+      }
+
       return {
-        rewrittenResume: cleaned,
-        usedAI: true,
-        aiProvider: provider.name,
-        notes: [`Rewritten using ${provider.name}. Review every change before using this resume.`],
+        result: {
+          rewrittenResume: cleaned,
+          usedAI: true,
+          aiProvider: provider.name,
+          notes: [`Rewritten using ${provider.name}. Review every change before using this resume.`],
+        },
+        fabricationBlocked: false,
       };
     } catch (err) {
       console.warn(`[aiProviderRouter] ${provider.name} failed, trying next provider:`, err);
@@ -182,5 +208,5 @@ export async function rewriteWithAI(
     }
   }
 
-  return null; // Every configured provider failed — the caller falls back to the mechanical rewrite.
+  return { result: null, fabricationBlocked };
 }

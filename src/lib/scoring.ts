@@ -120,7 +120,7 @@ function computeStructureScore(resumeText: string, feedback: FeedbackItem[]): nu
 
   const hasExperience = /experience|employment history/.test(lower);
   const hasEducation = /education/.test(lower);
-  const hasSkills = /skills/.test(lower);
+  const hasSkills = /skills|core competencies|areas of expertise/.test(lower);
 
   if (!hasExperience) {
     score -= 3;
