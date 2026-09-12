@@ -237,9 +237,25 @@ export default function ResumeChecker() {
 
       {step === "editor" && (
         <section className="space-y-6">
-          <div className="rounded-card border border-ink/15 bg-white/40 p-4 text-sm text-ink-soft">
-            {usedAI ? `Rewritten using ${aiProvider}.` : rewriteNotes[0]}
-            {" "}Review the changes below — you can still edit the text before downloading.
+          <div
+            className={`rounded-card border p-4 text-sm ${
+              usedAI ? "border-redpen/30 bg-redpen-soft text-ink" : "border-ink/15 bg-white/40 text-ink-soft"
+            }`}
+          >
+            {usedAI ? (
+              <>
+                <p className="font-semibold text-redpen">Verify this before you use it.</p>
+                <p className="mt-1">
+                  Rewritten using {aiProvider}. This was screened for invented employer names, but that check
+                  can&apos;t catch every kind of AI error — for example, true company names given false duties.
+                  Check every job title, employer, date, and claim below against your real resume before downloading.
+                </p>
+              </>
+            ) : (
+              <p>
+                {rewriteNotes[0]} Review the changes below — you can still edit the text before downloading.
+              </p>
+            )}
           </div>
 
           <DiffView original={resumeText} revised={rewritten} />
