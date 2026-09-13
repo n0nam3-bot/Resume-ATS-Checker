@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   }
 
   const wasConfigured = isAiConfigured(userKey);
-  const { result: aiResult, fabricationBlocked } = await rewriteWithAI(
+  const { result: aiResult, fabricationBlocked, flaggedNames } = await rewriteWithAI(
     resumeText,
     jobText,
     keywords.missing ?? [],
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   // than reading as a generic "the API call failed" note.
   const rewrittenResume = basicMechanicalRewrite(resumeText, keywords);
   const note = fabricationBlocked
-    ? "The AI rewrite was rejected by a safety check: it referenced an employer or organization name that doesn't appear anywhere in your original resume, which usually means it invented content. Falling back to a basic rule-based cleanup instead — always review every line of an AI rewrite against your real resume before using it."
+    ? `The AI-rewritten resume mentioned ${flaggedNames.length ? `"${flaggedNames.join('", "')}"` : "an employer"} as if it were one of your past jobs, but that name isn't anywhere in your real resume — a sign it invented a job rather than rewriting a real one. (This is about your resume, not the job posting — the company you're applying to doesn't need to appear in your resume.) Falling back to a basic rule-based cleanup instead — always review every line of an AI rewrite against your real resume before using it.`
     : wasConfigured
       ? "An AI key is configured, but every attempt failed just now (invalid key, wrong model name, or a rate limit). Falling back to a basic rule-based cleanup — check your Vercel project's Runtime Logs for the exact error."
       : "No AI provider is configured, so this is a basic rule-based cleanup: filler phrases removed and missing keywords listed for you to consider. Add a free API key (see .env.example) for a full AI rewrite.";
