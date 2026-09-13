@@ -159,6 +159,9 @@ export interface RewriteAttemptResult {
   /** True if every provider's output was rejected by the fabrication guard specifically
    *  (as opposed to network/API failures) — lets the caller give an accurate message. */
   fabricationBlocked: boolean;
+  /** The specific unrecognized employer/organization name(s) that triggered a rejection,
+   *  across every attempt — shown directly to the user instead of just server logs. */
+  flaggedNames: string[];
 }
 
 export async function rewriteWithAI(
@@ -168,10 +171,11 @@ export async function rewriteWithAI(
   userKey?: UserSuppliedKey
 ): Promise<RewriteAttemptResult> {
   const providers = getConfiguredProviders(userKey);
-  if (providers.length === 0) return { result: null, fabricationBlocked: false };
+  if (providers.length === 0) return { result: null, fabricationBlocked: false, flaggedNames: [] };
 
   const prompt = buildRewritePrompt(resumeText, jobText, missingKeywords);
   let fabricationBlocked = false;
+  const flaggedNames = new Set<string>();
 
   for (const provider of providers) {
     try {
@@ -187,6 +191,7 @@ export async function rewriteWithAI(
       const fabricationCheck = checkForFabrication(resumeText, cleaned);
       if (fabricationCheck.suspicious) {
         fabricationBlocked = true;
+        for (const name of fabricationCheck.unexplainedEmployers) flaggedNames.add(name);
         console.warn(
           `[aiProviderRouter] ${provider.name} output rejected — unexplained employer name(s): ${fabricationCheck.unexplainedEmployers.join(", ")}`
         );
@@ -201,6 +206,7 @@ export async function rewriteWithAI(
           notes: [`Rewritten using ${provider.name}. Review every change before using this resume.`],
         },
         fabricationBlocked: false,
+        flaggedNames: [],
       };
     } catch (err) {
       console.warn(`[aiProviderRouter] ${provider.name} failed, trying next provider:`, err);
@@ -208,5 +214,5 @@ export async function rewriteWithAI(
     }
   }
 
-  return { result: null, fabricationBlocked };
+  return { result: null, fabricationBlocked, flaggedNames: Array.from(flaggedNames) };
 }
