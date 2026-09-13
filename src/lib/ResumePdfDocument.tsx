@@ -42,7 +42,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: ACCENT,
     textTransform: "uppercase",
-    letterSpacing: 1.1,
+    // No letterSpacing here, deliberately: react-pdf implements it by embedding
+    // literal space characters between every letter in the PDF's text layer (e.g.
+    // "EDUCATION" becomes "E D U C AT I O N" to any text extractor, ATS included) —
+    // confirmed directly by rendering and re-extracting a test PDF. That silently
+    // breaks the exact ATS-readability this feature exists to protect, so it's not
+    // worth the visual flourish. textTransform alone extracts perfectly cleanly.
     borderBottomWidth: 0.75,
     borderBottomColor: RULE,
     paddingBottom: 2,
