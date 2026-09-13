@@ -36,6 +36,12 @@ const SKILL_DICTIONARY = [
   // Soft-skill phrasing that still shows up as literal JD requirements
   "stakeholder management", "cross-functional", "public speaking", "project management",
   "data analysis", "budget management", "vendor management", "client relations",
+  // Field service / trades / installation work — resumes for these roles deserve the
+  // same quality of matching as office/tech ones do.
+  "fiber optic", "cable installation", "low voltage", "field service", "troubleshooting",
+  "network infrastructure", "signal testing", "customer service", "safety procedures",
+  "equipment maintenance", "inventory management", "route planning", "hvac", "electrical wiring",
+  "blueprint reading", "quality assurance", "preventive maintenance",
 ];
 
 const STOPWORDS = new Set([
@@ -43,6 +49,20 @@ const STOPWORDS = new Set([
   "this", "that", "from", "who", "what", "role", "job", "work", "team", "years",
   "experience", "ability", "skills", "including", "such", "into", "using", "able",
   "strong", "excellent", "a", "an", "of", "to", "in", "on", "as", "is", "be", "or",
+]);
+
+// Short capitalized sequences that are never legitimate resume skills, even though
+// they match the acronym pattern below — identity/work-eligibility jargon (SSN, EAD),
+// business-entity suffixes (LLC, INC), and vehicle types (SUV) all show up constantly
+// in job postings (especially gig/1099/trades listings) without being things anyone
+// would ever list as a skill on a resume. Treating them as keywords to match against
+// produced nonsensical near-0% scores that had nothing to do with actual fit —
+// see conversation history for the case that surfaced this.
+const NON_SKILL_ACRONYMS = new Set([
+  "ssn", "ead", "dl", "itin", "usc", "us", "usa", "dob", "poc",
+  "llc", "inc", "corp", "ltd", "llp", "pllc",
+  "suv",
+  "asap", "faq", "tbd", "eta", "pto",
 ]);
 
 function normalize(text: string): string {
@@ -92,7 +112,7 @@ export function extractJobKeywords(jobText: string): string[] {
   const acronyms = jobText.match(acronymPattern) ?? [];
   for (const raw of acronyms) {
     const term = raw.toLowerCase();
-    if (STOPWORDS.has(term) || term.length < 2) continue;
+    if (STOPWORDS.has(term) || NON_SKILL_ACRONYMS.has(term) || term.length < 2) continue;
     found.add(term);
   }
 
