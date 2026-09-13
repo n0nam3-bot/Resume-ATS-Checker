@@ -1,5 +1,5 @@
 import type { RewriteResult } from "./types";
-import { repairWordJams } from "./textRepair";
+import { repairWordJams, bulletizeDenseParagraphs } from "./textRepair";
 import { checkForFabrication } from "./fabricationGuard";
 
 /**
@@ -41,6 +41,10 @@ STRICT RULES:
 - You may naturally weave in any of the "keywords to consider" below, ONLY if the resume already implies the candidate has that experience; otherwise leave it out entirely.
 - If the candidate's real background has little genuine overlap with this job posting, do NOT invent a new job, employer, or skill set to bridge the gap. Present their real, true experience as favorably and relevantly as you honestly can, even if the fit stays imperfect — an honest resume that's an imperfect fit is far better than a fabricated one, and fabricating experience is a serious harm to a real person's career, not a stylistic choice.
 - Keep the output as a plain-text resume — no markdown tables, no HTML, no commentary.
+- Format every job's responsibilities and achievements as separate bullet points, one per line, each starting with "- " — never as a dense paragraph of run-together sentences. For example, write:
+  - Investigated employee misconduct and authored formal investigative reports
+  - Conducted internal audits to assess compliance posture
+  NOT: "Investigated employee misconduct and authored formal investigative reports. Conducted internal audits to assess compliance posture." This applies to the Professional Experience section only — the summary/objective stays as a normal paragraph.
 - Always put a normal space between a job title and the date range that follows it (e.g. "Director of Compliance  August 2025 – Present", never "Director of ComplianceAugust 2025 – Present"). Some source resumes use a tab character there — treat it as a space, never delete it.
 - Always keep hyphens in compound adjectives (e.g. "cross-functional," "data-driven," "customer-focused") — never drop the hyphen and run the two words together.
 - Return ONLY the rewritten resume text. Do not include a preamble, an explanation, or code fences.
@@ -180,8 +184,8 @@ export async function rewriteWithAI(
   for (const provider of providers) {
     try {
       const raw = await provider.call(prompt);
-      const cleaned = repairWordJams(
-        raw.replace(/^```[\w]*\n?/, "").replace(/```\s*$/, "").trim()
+      const cleaned = bulletizeDenseParagraphs(
+        repairWordJams(raw.replace(/^```[\w]*\n?/, "").replace(/```\s*$/, "").trim())
       );
       if (!cleaned) throw new Error("empty response");
 

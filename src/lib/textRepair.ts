@@ -48,6 +48,59 @@ function applyKnownCompoundFixes(text: string): string {
 }
 
 /**
+ * Splits a dense, multi-sentence paragraph of job duties into individual bullet
+ * lines. Free-tier models have been observed writing the Professional Experience
+ * section as flowing prose instead of the scannable bullet list every recruiter and
+ * ATS expects, despite an explicit prompt instruction to always use bullets — this
+ * is the backstop for when that instruction alone doesn't hold. Only applies inside
+ * the experience section; a summary/objective paragraph is supposed to stay prose.
+ */
+const EXPERIENCE_SECTION_HEADER = /^(professional experience|work experience|employment history|experience)$/i;
+const OTHER_SECTION_HEADER =
+  /^(professional summary|summary|objective|career objective|core competencies|skills|technical skills|education|certifications|projects|awards|honors|publications|volunteer experience|languages|references|additional information|interests)$/i;
+// Splits after a sentence-ending period only when it follows a lowercase letter or
+// digit (so abbreviations like "U.S." or a citation like "800.3" aren't split) and
+// is followed by a capitalized word (a new sentence, not a mid-sentence decimal).
+const SENTENCE_BOUNDARY = /(?<=[a-z0-9])\.\s+(?=[A-Z])/g;
+
+export function bulletizeDenseParagraphs(text: string): string {
+  const lines = text.split("\n");
+  const result: string[] = [];
+  let inExperienceSection = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (EXPERIENCE_SECTION_HEADER.test(trimmed)) {
+      inExperienceSection = true;
+      result.push(line);
+      continue;
+    }
+    if (OTHER_SECTION_HEADER.test(trimmed)) {
+      inExperienceSection = false;
+      result.push(line);
+      continue;
+    }
+
+    const alreadyBulleted = /^[-•*◦]\s/.test(trimmed);
+    const sentenceCount = (trimmed.match(SENTENCE_BOUNDARY)?.length ?? 0) + 1;
+
+    if (inExperienceSection && !alreadyBulleted && trimmed.length > 150 && sentenceCount >= 2) {
+      const sentences = trimmed
+        .split(SENTENCE_BOUNDARY)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((s) => (/[.!?]$/.test(s) ? s : `${s}.`));
+      for (const sentence of sentences) result.push(`- ${sentence}`);
+    } else {
+      result.push(line);
+    }
+  }
+
+  return result.join("\n");
+}
+
+/**
  * Repairs word-jam patterns observed from free-tier AI models during resume
  * rewriting. Applied once, right where the AI's response comes back, so every
  * downstream consumer (diff view, edit textarea, PDF export) sees the same
