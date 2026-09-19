@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2, Sparkles, ChevronDown, RotateCcw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, Sparkles, ChevronDown, RotateCcw, RefreshCw, FileText } from "lucide-react";
 import dynamic from "next/dynamic";
 import UploadDropzone from "./UploadDropzone";
 import JobPostingInput from "./JobPostingInput";
@@ -11,6 +11,7 @@ import DiffView from "./DiffView";
 import DonateButton from "./DonateButton";
 import { parseResumeFile } from "@/lib/parseResume";
 import { parseJsonResponse } from "@/lib/safeFetchJson";
+import { loadPersistedInputs, savePersistedInputs, clearPersistedInputs } from "@/lib/persistedState";
 import type { AnalysisResult, FormatMeta } from "@/lib/types";
 
 // @react-pdf/renderer (pulled in by DownloadButton) resolves differently between
@@ -31,15 +32,24 @@ type AiProvider = "gemini" | "groq" | "openrouter";
 export default function ResumeChecker() {
   const [step, setStep] = useState<Step>("upload");
   const [error, setError] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
-  const [file, setFile] = useState<File | null>(null);
+  // The resume itself is stored as already-extracted text, not a File object — a
+  // File can't survive a page reload, but plain text can be persisted to
+  // localStorage and re-hydrated directly, which is what makes "stays loaded across
+  // visits" possible at all.
+  const [resumeText, setResumeText] = useState("");
+  const [formatMeta, setFormatMeta] = useState<FormatMeta | null>(null);
+  const [resumeFileName, setResumeFileName] = useState("");
+  const [pickedFile, setPickedFile] = useState<File | null>(null);
+  const [isParsingResume, setIsParsingResume] = useState(false);
+  const [resumeParseError, setResumeParseError] = useState<string | null>(null);
+
   const [jobMode, setJobMode] = useState<"url" | "text">("text");
   const [jobUrl, setJobUrl] = useState("");
   const [jobTextInput, setJobTextInput] = useState("");
+  const [jobText, setJobText] = useState(""); // resolved/scraped job text, cached
 
-  const [resumeText, setResumeText] = useState("");
-  const [formatMeta, setFormatMeta] = useState<FormatMeta | null>(null);
-  const [jobText, setJobText] = useState("");
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
 
   const [rewritten, setRewritten] = useState("");
@@ -52,42 +62,157 @@ export default function ResumeChecker() {
   const [byokProvider, setByokProvider] = useState<AiProvider>("gemini");
   const [byokKey, setByokKey] = useState("");
 
-  const canAnalyze = file !== null && (jobMode === "url" ? jobUrl.trim().length > 0 : jobTextInput.trim().length > 0);
+  // Hydrate once on mount — only in the browser, only after mount, so this never
+  // runs during server-side rendering of this client component.
+  useEffect(() => {
+    const persisted = loadPersistedInputs();
+    if (persisted.resumeText) {
+      setResumeText(persisted.resumeText);
+      setFormatMeta(persisted.formatMeta);
+      setResumeFileName(persisted.resumeFileName);
+    }
+    setJobMode(persisted.jobMode);
+    setJobUrl(persisted.jobUrl);
+    setJobTextInput(persisted.jobTextInput);
+    setJobText(persisted.jobText);
+    setHydrated(true);
+  }, []);
 
-  async function handleAnalyze() {
+  // Persist on every relevant change, but only after hydration has actually run —
+  // otherwise the initial blank state would overwrite real saved data with nothing
+  // in the instant before hydration completes.
+  useEffect(() => {
+    if (!hydrated) return;
+    savePersistedInputs({ resumeText, formatMeta, resumeFileName, jobMode, jobUrl, jobTextInput, jobText });
+  }, [hydrated, resumeText, formatMeta, resumeFileName, jobMode, jobUrl, jobTextInput, jobText]);
+
+  const canAnalyze =
+    resumeText.trim().length > 0 && (jobMode === "url" ? jobUrl.trim().length > 0 : jobTextInput.trim().length > 0);
+
+  async function handleResumeFileSelected(file: File | null) {
+    setPickedFile(file);
+    setResumeParseError(null);
     if (!file) return;
+    setIsParsingResume(true);
+    try {
+      const { text, meta } = await parseResumeFile(file);
+      setResumeText(text);
+      setFormatMeta(meta);
+      setResumeFileName(file.name);
+      // A different resume invalidates any score/rewrite computed for the old one.
+      setAnalysis(null);
+      setRewritten("");
+      setEditedText("");
+    } catch (err) {
+      setResumeParseError(err instanceof Error ? err.message : "Couldn't read that file.");
+    } finally {
+      setIsParsingResume(false);
+      setPickedFile(null);
+    }
+  }
+
+  function handleChangeResume() {
+    setResumeText("");
+    setFormatMeta(null);
+    setResumeFileName("");
+    setResumeParseError(null);
+    setAnalysis(null);
+    setRewritten("");
+    setEditedText("");
+    setStep("upload");
+  }
+
+  function handleJobModeChange(mode: "url" | "text") {
+    setJobMode(mode);
+    setJobText(""); // invalidate the resolved cache — the underlying input changed
+  }
+  function handleJobUrlChange(url: string) {
+    setJobUrl(url);
+    setJobText("");
+  }
+  function handleJobTextInputChange(text: string) {
+    setJobTextInput(text);
+    setJobText("");
+  }
+
+  function handleChangeJob() {
+    setJobUrl("");
+    setJobTextInput("");
+    setJobText("");
+    setAnalysis(null);
+    setRewritten("");
+    setEditedText("");
+    setStep("upload");
+  }
+
+  /**
+   * Shared by the normal "Check my resume" click and the editor's "Re-check this
+   * version" action. `overrideResumeText`/`overrideMeta` let a re-check score the
+   * in-memory edited text directly, without requiring a download-and-reupload round
+   * trip — reading `resumeText` from state alone would race React's state batching
+   * if called right after `setResumeText`, so the value is threaded through
+   * explicitly instead.
+   */
+  async function handleAnalyze(overrideResumeText?: string, overrideMeta?: FormatMeta | null) {
+    const textToAnalyze = overrideResumeText ?? resumeText;
+    if (!textToAnalyze.trim()) return;
     setError(null);
     setStep("analyzing");
     try {
-      const { text: parsedResumeText, meta } = await parseResumeFile(file);
-
-      let resolvedJobText = jobTextInput;
-      if (jobMode === "url") {
-        const res = await fetch("/api/scrape-job", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: jobUrl }),
-        });
-        const data = await parseJsonResponse<{ text: string }>(res);
-        resolvedJobText = data.text;
+      // Reuse an already-resolved job text (e.g. from a prior check, or a re-check
+      // that isn't touching the job posting at all) instead of re-scraping —
+      // handleJob*Change always clears this the instant the raw input changes, so
+      // a non-empty value here is guaranteed to match the current job fields.
+      let resolvedJobText = jobText;
+      if (!resolvedJobText) {
+        if (jobMode === "url") {
+          const res = await fetch("/api/scrape-job", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: jobUrl }),
+          });
+          const data = await parseJsonResponse<{ text: string }>(res);
+          resolvedJobText = data.text;
+        } else {
+          resolvedJobText = jobTextInput;
+        }
       }
 
+      const metaToUse = overrideMeta !== undefined ? overrideMeta : formatMeta;
       const analyzeRes = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resumeText: parsedResumeText, jobText: resolvedJobText, meta }),
+        body: JSON.stringify({ resumeText: textToAnalyze, jobText: resolvedJobText, meta: metaToUse }),
       });
       const analyzeData = await parseJsonResponse<{ analysis: AnalysisResult }>(analyzeRes);
 
-      setResumeText(parsedResumeText);
-      setFormatMeta(meta);
+      setResumeText(textToAnalyze);
+      setFormatMeta(metaToUse ?? null);
       setJobText(resolvedJobText);
       setAnalysis(analyzeData.analysis);
+      // Only clear the rewrite/edit state once we know the re-check succeeded —
+      // clearing it beforehand would lose the user's edited text on a failed request.
+      setRewritten("");
+      setEditedText("");
       setStep("report");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong — please try again.");
-      setStep("upload");
+      setStep(overrideResumeText !== undefined ? "editor" : "upload");
     }
+  }
+
+  /** Re-scores the edited/AI-rewritten text directly — no download or re-upload needed. */
+  function handleRecheckEditedVersion() {
+    if (!editedText.trim()) return;
+    const cleanMeta: FormatMeta = {
+      fileType: formatMeta?.fileType ?? "pdf",
+      possibleMultiColumn: false,
+      hasTables: false,
+      hasImages: false,
+      wordCount: editedText.split(/\s+/).filter(Boolean).length,
+    };
+    setResumeFileName((prev) => (prev ? `${prev} (edited)` : "Edited resume"));
+    handleAnalyze(editedText, cleanMeta);
   }
 
   async function handleAutoFix() {
@@ -127,15 +252,18 @@ export default function ResumeChecker() {
   function handleStartOver() {
     setStep("upload");
     setError(null);
-    setFile(null);
-    setJobUrl("");
-    setJobTextInput("");
+    setPickedFile(null);
+    setResumeParseError(null);
     setResumeText("");
     setFormatMeta(null);
+    setResumeFileName("");
+    setJobUrl("");
+    setJobTextInput("");
     setJobText("");
     setAnalysis(null);
     setRewritten("");
     setEditedText("");
+    clearPersistedInputs();
   }
 
   return (
@@ -164,20 +292,34 @@ export default function ResumeChecker() {
 
       {(step === "upload" || step === "analyzing") && (
         <section className="space-y-6 rounded-card border border-ink/15 bg-white/40 p-5 sm:p-6">
-          <UploadDropzone file={file} onFileSelected={setFile} disabled={step === "analyzing"} />
+          <div>
+            <label className="mb-2 block text-sm font-medium text-ink">Your resume</label>
+            {resumeText ? (
+              <ResumeLoadedCard fileName={resumeFileName} onChange={handleChangeResume} />
+            ) : (
+              <UploadDropzone
+                file={pickedFile}
+                onFileSelected={handleResumeFileSelected}
+                disabled={step === "analyzing" || isParsingResume}
+              />
+            )}
+            {isParsingResume && <p className="mt-1.5 text-xs text-ink-soft">Reading your resume…</p>}
+            {resumeParseError && <p className="mt-1.5 text-xs text-redpen">{resumeParseError}</p>}
+          </div>
+
           <JobPostingInput
             mode={jobMode}
-            onModeChange={setJobMode}
+            onModeChange={handleJobModeChange}
             url={jobUrl}
-            onUrlChange={setJobUrl}
+            onUrlChange={handleJobUrlChange}
             text={jobTextInput}
-            onTextChange={setJobTextInput}
+            onTextChange={handleJobTextInputChange}
             disabled={step === "analyzing"}
           />
           <button
             type="button"
-            onClick={handleAnalyze}
-            disabled={!canAnalyze || step === "analyzing"}
+            onClick={() => handleAnalyze()}
+            disabled={!canAnalyze || step === "analyzing" || isParsingResume}
             className="inline-flex w-full items-center justify-center gap-2 rounded-card bg-ink px-4 py-3 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-40 sm:w-auto"
           >
             {step === "analyzing" && <Loader2 size={16} className="animate-spin" aria-hidden />}
@@ -203,7 +345,7 @@ export default function ResumeChecker() {
             </pre>
           </details>
 
-          <div className="flex flex-col gap-3 border-t border-ink/10 pt-5 sm:flex-row sm:items-center">
+          <div className="flex flex-col flex-wrap gap-3 border-t border-ink/10 pt-5 sm:flex-row sm:items-center">
             <button
               type="button"
               onClick={handleAutoFix}
@@ -211,6 +353,12 @@ export default function ResumeChecker() {
             >
               <Sparkles size={16} aria-hidden />
               Auto-fix my resume
+            </button>
+            <button type="button" onClick={handleChangeJob} className="text-sm text-ink-soft hover:text-ink">
+              Change job posting
+            </button>
+            <button type="button" onClick={handleChangeResume} className="text-sm text-ink-soft hover:text-ink">
+              Change resume
             </button>
             <button type="button" onClick={handleStartOver} className="text-sm text-ink-soft hover:text-ink">
               Start over
@@ -270,8 +418,16 @@ export default function ResumeChecker() {
             />
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-ink/10 pt-5 sm:flex-row sm:items-center">
+          <div className="flex flex-col flex-wrap gap-3 border-t border-ink/10 pt-5 sm:flex-row sm:items-center">
             <DownloadButton text={editedText} filename="resume-tailored.pdf" />
+            <button
+              type="button"
+              onClick={handleRecheckEditedVersion}
+              className="inline-flex items-center gap-1.5 rounded-card border border-ink/25 px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-white/60"
+            >
+              <RefreshCw size={14} aria-hidden />
+              Re-check this version&apos;s score
+            </button>
             <button
               type="button"
               onClick={handleStartOver}
@@ -289,6 +445,24 @@ export default function ResumeChecker() {
         <DonateButton />
       </footer>
     </main>
+  );
+}
+
+function ResumeLoadedCard({ fileName, onChange }: { fileName: string; onChange: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-card border border-stamp/30 bg-stamp-soft px-4 py-3">
+      <div className="flex min-w-0 items-center gap-2 text-sm text-ink">
+        <FileText size={18} className="shrink-0 text-stamp" aria-hidden />
+        <span className="truncate">{fileName || "Resume loaded"}</span>
+      </div>
+      <button
+        type="button"
+        onClick={onChange}
+        className="shrink-0 text-sm font-medium text-ink-soft hover:text-ink"
+      >
+        Change
+      </button>
+    </div>
   );
 }
 
