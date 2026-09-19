@@ -29,6 +29,21 @@ const DownloadButton = dynamic(() => import("./DownloadButton"), {
 type Step = "upload" | "analyzing" | "report" | "rewriting" | "editor";
 type AiProvider = "gemini" | "groq" | "openrouter";
 
+/** A sensible starting filename derived from the uploaded resume's own name. */
+function buildDefaultFilenameBase(sourceFileName: string): string {
+  const stripped = sourceFileName
+    .replace(/\s*\(edited\)\s*$/i, "")
+    .replace(/\.(pdf|docx|doc)$/i, "")
+    .trim();
+  return stripped ? `${stripped}-tailored` : "resume-tailored";
+}
+
+/** Strips characters invalid in filenames and guarantees a non-empty base. */
+function sanitizeFilenameBase(name: string): string {
+  const cleaned = name.trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\.pdf$/i, "").trim();
+  return cleaned || "resume-tailored";
+}
+
 export default function ResumeChecker() {
   const [step, setStep] = useState<Step>("upload");
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +72,7 @@ export default function ResumeChecker() {
   const [rewriteNotes, setRewriteNotes] = useState<string[]>([]);
   const [usedAI, setUsedAI] = useState(false);
   const [aiProvider, setAiProvider] = useState<string | undefined>();
+  const [downloadFilenameBase, setDownloadFilenameBase] = useState("resume-tailored");
 
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [byokProvider, setByokProvider] = useState<AiProvider>("gemini");
@@ -242,6 +258,7 @@ export default function ResumeChecker() {
       setRewriteNotes(data.notes ?? []);
       setUsedAI(Boolean(data.usedAI));
       setAiProvider(data.aiProvider);
+      setDownloadFilenameBase(buildDefaultFilenameBase(resumeFileName));
       setStep("editor");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong — please try again.");
@@ -263,6 +280,7 @@ export default function ResumeChecker() {
     setAnalysis(null);
     setRewritten("");
     setEditedText("");
+    setDownloadFilenameBase("resume-tailored");
     clearPersistedInputs();
   }
 
@@ -418,24 +436,49 @@ export default function ResumeChecker() {
             />
           </div>
 
-          <div className="flex flex-col flex-wrap gap-3 border-t border-ink/10 pt-5 sm:flex-row sm:items-center">
-            <DownloadButton text={editedText} filename="resume-tailored.pdf" />
-            <button
-              type="button"
-              onClick={handleRecheckEditedVersion}
-              className="inline-flex items-center gap-1.5 rounded-card border border-ink/25 px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-white/60"
-            >
-              <RefreshCw size={14} aria-hidden />
-              Re-check this version&apos;s score
-            </button>
-            <button
-              type="button"
-              onClick={handleStartOver}
-              className="inline-flex items-center gap-1.5 text-sm text-ink-soft hover:text-ink"
-            >
-              <RotateCcw size={14} aria-hidden />
-              Start over
-            </button>
+          <div className="space-y-4 border-t border-ink/10 pt-5">
+            <div>
+              <label htmlFor="download-filename" className="mb-1.5 block text-sm font-medium text-ink">
+                Save as
+              </label>
+              <div className="flex max-w-sm items-center gap-1.5">
+                <input
+                  id="download-filename"
+                  type="text"
+                  value={downloadFilenameBase}
+                  onChange={(e) => setDownloadFilenameBase(e.target.value)}
+                  placeholder="resume-tailored"
+                  className="min-w-0 flex-1 rounded-card border border-ink/25 bg-white/60 px-3 py-2 text-sm text-ink focus-visible:border-redpen"
+                />
+                <span className="shrink-0 text-sm text-ink-soft">.pdf</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col flex-wrap gap-3 sm:flex-row sm:items-center">
+              <DownloadButton text={editedText} filename={`${sanitizeFilenameBase(downloadFilenameBase)}.pdf`} />
+              <button
+                type="button"
+                onClick={handleRecheckEditedVersion}
+                className="inline-flex items-center gap-1.5 rounded-card border border-ink/25 px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-white/60"
+              >
+                <RefreshCw size={14} aria-hidden />
+                Re-check this version&apos;s score
+              </button>
+              <button type="button" onClick={handleChangeJob} className="text-sm text-ink-soft hover:text-ink">
+                Change job posting
+              </button>
+              <button type="button" onClick={handleChangeResume} className="text-sm text-ink-soft hover:text-ink">
+                Change resume
+              </button>
+              <button
+                type="button"
+                onClick={handleStartOver}
+                className="inline-flex items-center gap-1.5 text-sm text-ink-soft hover:text-ink"
+              >
+                <RotateCcw size={14} aria-hidden />
+                Start over
+              </button>
+            </div>
           </div>
         </section>
       )}
