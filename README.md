@@ -13,6 +13,12 @@ Full design rationale, architecture diagrams, and roadmap: [`docs/RESUME_ATS_CHE
 - **Job posting** via pasted text or a URL (scraped server-side to dodge CORS).
 - **Deterministic ATS score** (`/100`, broken into keyword match, formatting, content quality,
   structure) with specific, explainable feedback — no AI call required for this part.
+- **Your resume and job posting stay loaded across visits.** Both are saved to the browser's own
+  `localStorage` — never sent to a server or an AI provider beyond what a normal check already
+  sends — so refreshing the tab doesn't mean starting over. "Change resume" and "Change job
+  posting" swap just one side without clearing the other, and "Re-check this version's score"
+  re-scores your edited/AI-rewritten text directly from the editor, no download-and-reupload
+  round trip required.
 - **Auto-fix**: rewrites the resume using a pooled free-tier AI provider (Gemini → Groq →
   OpenRouter, tried in order with automatic fallback), or a rule-based mechanical cleanup if no
   AI key is configured — the feature works either way.
@@ -99,6 +105,10 @@ Rough steps for Vercel:
   **This is a safety net, not a guarantee**: it catches invented employer names specifically, not
   every possible fabrication (e.g. a true employer given false duties). Always review the diff
   before using AI-rewritten output — the UI now says this prominently for exactly this reason.
+- **The "stays loaded" persistence is per-browser, not per-account.** It's plain `localStorage`,
+  so it won't follow you to a different browser or device, and clearing browser data (or "Start
+  over" in the app, which does this deliberately) removes it. There's no login system here — that
+  would be a real feature to add, not a limitation to work around.
 
 ## License
 
