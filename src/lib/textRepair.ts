@@ -48,12 +48,20 @@ function applyKnownCompoundFixes(text: string): string {
 }
 
 /**
- * Splits a dense, multi-sentence paragraph of job duties into individual bullet
- * lines. Free-tier models have been observed writing the Professional Experience
- * section as flowing prose instead of the scannable bullet list every recruiter and
- * ATS expects, despite an explicit prompt instruction to always use bullets — this
- * is the backstop for when that instruction alone doesn't hold. Only applies inside
- * the experience section; a summary/objective paragraph is supposed to stay prose.
+ * Makes sure every job duty in the Professional Experience section has a bullet
+ * marker. Free-tier models have been observed failing this two different ways:
+ * (1) writing the whole entry as one dense multi-sentence paragraph, and (2) — the
+ * case that got past the first fix — putting each duty on its own line, correctly
+ * separated, but with no "- " marker on any of them at all. This handles both,
+ * despite an explicit prompt instruction to always use bullets, as a backstop for
+ * when that instruction alone doesn't hold. Only applies inside the Professional
+ * Experience section; a summary/objective paragraph is supposed to stay prose.
+ *
+ * Within an entry, the first non-blank line is the role/title (+ date) and is
+ * never bulleted; the second is treated as the company/location line and skipped
+ * too, unless it doesn't actually look like one (no "|", and either long or
+ * sentence-like) — in which case there was no separate company line, and it's
+ * treated as the first duty instead. Every line after that is a duty.
  */
 const EXPERIENCE_SECTION_HEADER = /^(professional experience|work experience|employment history|experience)$/i;
 const OTHER_SECTION_HEADER =
@@ -62,17 +70,34 @@ const OTHER_SECTION_HEADER =
 // digit (so abbreviations like "U.S." or a citation like "800.3" aren't split) and
 // is followed by a capitalized word (a new sentence, not a mid-sentence decimal).
 const SENTENCE_BOUNDARY = /(?<=[a-z0-9])\.\s+(?=[A-Z])/g;
+const BULLET_MARKER = /^[-•*◦]\s/;
+
+function bulletizeDuty(trimmed: string, result: string[]): void {
+  const sentenceCount = (trimmed.match(SENTENCE_BOUNDARY)?.length ?? 0) + 1;
+  if (trimmed.length > 150 && sentenceCount >= 2) {
+    const sentences = trimmed
+      .split(SENTENCE_BOUNDARY)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => (/[.!?]$/.test(s) ? s : `${s}.`));
+    for (const sentence of sentences) result.push(`- ${sentence}`);
+  } else {
+    result.push(`- ${trimmed}`);
+  }
+}
 
 export function bulletizeDenseParagraphs(text: string): string {
   const lines = text.split("\n");
   const result: string[] = [];
   let inExperienceSection = false;
+  let lineIndexInEntry = 0; // 0 = expect role/title line, 1 = expect company/location line, 2+ = duties
 
   for (const line of lines) {
     const trimmed = line.trim();
 
     if (EXPERIENCE_SECTION_HEADER.test(trimmed)) {
       inExperienceSection = true;
+      lineIndexInEntry = 0;
       result.push(line);
       continue;
     }
@@ -81,20 +106,38 @@ export function bulletizeDenseParagraphs(text: string): string {
       result.push(line);
       continue;
     }
-
-    const alreadyBulleted = /^[-•*◦]\s/.test(trimmed);
-    const sentenceCount = (trimmed.match(SENTENCE_BOUNDARY)?.length ?? 0) + 1;
-
-    if (inExperienceSection && !alreadyBulleted && trimmed.length > 150 && sentenceCount >= 2) {
-      const sentences = trimmed
-        .split(SENTENCE_BOUNDARY)
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .map((s) => (/[.!?]$/.test(s) ? s : `${s}.`));
-      for (const sentence of sentences) result.push(`- ${sentence}`);
-    } else {
+    if (trimmed === "") {
+      lineIndexInEntry = 0; // the next non-blank line starts a new entry
       result.push(line);
+      continue;
     }
+    if (!inExperienceSection) {
+      result.push(line);
+      continue;
+    }
+    if (BULLET_MARKER.test(trimmed)) {
+      lineIndexInEntry = Math.max(lineIndexInEntry, 2); // an existing bullet means we're past the header lines
+      result.push(line);
+      continue;
+    }
+
+    if (lineIndexInEntry === 0) {
+      lineIndexInEntry = 1;
+      result.push(line);
+      continue;
+    }
+    if (lineIndexInEntry === 1) {
+      const looksLikeCompanyLine = trimmed.includes("|") || (trimmed.length < 80 && !/[.!?]$/.test(trimmed));
+      lineIndexInEntry = 2;
+      if (looksLikeCompanyLine) {
+        result.push(line);
+        continue;
+      }
+      // Doesn't look like a company/location line, so there wasn't a separate one
+      // — this is actually the first duty and needs a bullet like any other.
+    }
+
+    bulletizeDuty(trimmed, result);
   }
 
   return result.join("\n");
