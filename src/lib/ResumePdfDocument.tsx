@@ -67,6 +67,10 @@ const styles = StyleSheet.create({
     color: INK,
     marginBottom: 3,
   },
+  labelBold: {
+    fontFamily: "Helvetica-Bold",
+    color: INK,
+  },
   bulletRow: {
     flexDirection: "row",
     marginBottom: 2,
@@ -101,6 +105,23 @@ function renderBlock(block: ResumeBlock, key: string | number) {
   if (block.type === "roleLine") {
     return (
       <Text key={key} style={styles.roleLine}>
+        {block.text}
+      </Text>
+    );
+  }
+  if (block.type === "labeledList") {
+    // Non-breaking spaces within the label specifically: react-pdf has a confirmed
+    // bug where a plain space inside a bold (Helvetica-Bold) run gets silently
+    // dropped once the surrounding paragraph needs to wrap — verified by rendering
+    // and re-extracting a test PDF, where "Additional Technical Skills:" came out
+    // as "AdditionalTechnical Skills:". A non-breaking space isn't a valid wrap
+    // point, which sidesteps the bug — and a short category label never needing to
+    // wrap internally is the right behavior anyway. Not applied elsewhere (e.g.
+    // roleLine) since a genuinely long line still needs to be able to wrap.
+    const labelText = (block.label ?? "").replace(/ /g, "\u00A0");
+    return (
+      <Text key={key} style={styles.text}>
+        <Text style={styles.labelBold}>{labelText}:{"\u00A0"}</Text>
         {block.text}
       </Text>
     );

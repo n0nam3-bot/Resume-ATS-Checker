@@ -1,8 +1,10 @@
-export type ResumeBlockType = "name" | "contact" | "sectionHeader" | "roleLine" | "bullet" | "text" | "spacer";
+export type ResumeBlockType = "name" | "contact" | "sectionHeader" | "roleLine" | "bullet" | "text" | "labeledList" | "spacer";
 
 export interface ResumeBlock {
   type: ResumeBlockType;
   text: string;
+  /** Only set for "labeledList" — the category name before the colon (e.g. "Technical Skills"). */
+  label?: string;
 }
 
 // Resume text has no guaranteed structure — this infers it from common conventions
@@ -19,6 +21,14 @@ const SECTION_HEADER_KEYWORDS = [
 
 const DATE_RANGE_PATTERN = /\b(19|20)\d{2}\b.{0,20}(\b(19|20)\d{2}\b|present|current)/i;
 const BULLET_PATTERN = /^\s*[-•*◦]\s+/;
+// A degree/credential line — treated with the same bold "role" emphasis as a job
+// title, even without an adjacent date, so it anchors an Education entry visually.
+const DEGREE_PATTERN = /\b(bachelor|master|associate|ph\.?d\.?|doctorate|mba|b\.?s\.?|b\.?a\.?|m\.?s\.?|m\.?a\.?|certificate|diploma)\b/i;
+// "Category: item, item, item" — the standard Core Competencies convention. The
+// label must be short and can't contain a period or a pipe, which rules out
+// education/experience detail lines that happen to contain a colon (e.g.
+// "... | GPA: 3.425", where "GPA" alone would otherwise look like a label).
+const LABELED_LIST_PATTERN = /^([^:\n]{2,60}):\s+(.+)$/;
 
 function isSectionHeader(line: string): boolean {
   const trimmed = line.trim();
@@ -96,11 +106,19 @@ export function parseResumeForPdf(rawText: string): ResumeBlock[] {
       !!nextLine &&
       nextLine.length < 100 &&
       DATE_RANGE_PATTERN.test(nextLine);
+    const looksLikeDegree = trimmed.length < 100 && DEGREE_PATTERN.test(trimmed);
 
-    if (isDateLineItself || precedesDateLine) {
+    if (isDateLineItself || precedesDateLine || looksLikeDegree) {
       blocks.push({ type: "roleLine", text: trimmed });
       continue;
     }
+
+    const labeledMatch = trimmed.match(LABELED_LIST_PATTERN);
+    if (labeledMatch && !labeledMatch[1].includes(".") && !labeledMatch[1].includes("|")) {
+      blocks.push({ type: "labeledList", label: labeledMatch[1], text: labeledMatch[2] });
+      continue;
+    }
+
     blocks.push({ type: "text", text: trimmed });
   }
 
