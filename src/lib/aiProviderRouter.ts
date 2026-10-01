@@ -1,6 +1,7 @@
 import type { RewriteResult } from "./types";
 import { repairWordJams, bulletizeDenseParagraphs } from "./textRepair";
 import { checkForFabrication } from "./fabricationGuard";
+import { checkForSkillsLoss } from "./contentLossGuard";
 
 /**
  * Server-only. This file must never be imported from a client component — it reads
@@ -40,6 +41,7 @@ STRICT RULES:
 - You may rephrase, reorder, tighten, and emphasize existing true content.
 - You may naturally weave in any of the "keywords to consider" below, ONLY if the resume already implies the candidate has that experience; otherwise leave it out entirely.
 - If the candidate's real background has little genuine overlap with this job posting, do NOT invent a new job, employer, or skill set to bridge the gap. Present their real, true experience as favorably and relevantly as you honestly can, even if the fit stays imperfect — an honest resume that's an imperfect fit is far better than a fabricated one, and fabricating experience is a serious harm to a real person's career, not a stylistic choice.
+- Keep every skill, tool, and competency already listed in the original resume's Skills/Core Competencies section — you may reorder them to put the most relevant ones first, regroup the categories, and add genuinely applicable missing keywords, but do not delete existing real skills to make the section shorter or more "focused." A longer, complete skills section is correct; a trimmed-down one that drops real skills is a quality regression, not an improvement.
 - Keep the output as a plain-text resume — no markdown tables, no HTML, no commentary.
 - Format every job's responsibilities and achievements as separate bullet points, one per line, each starting with "- " — never as a dense paragraph of run-together sentences. For example, write:
   - Investigated employee misconduct and authored formal investigative reports
@@ -166,6 +168,13 @@ export interface RewriteAttemptResult {
   /** The specific unrecognized employer/organization name(s) that triggered a rejection,
    *  across every attempt — shown directly to the user instead of just server logs. */
   flaggedNames: string[];
+  /** True if every provider's output was rejected for stripping most of the real
+   *  skills list instead of a fabrication issue — a different failure mode, same
+   *  "don't show the user a worse resume" principle. */
+  skillsLossBlocked: boolean;
+  /** originalCount/rewrittenCount from the last skills-loss check that fired, for a
+   *  concrete, specific message instead of a vague "something was dropped." */
+  skillsLossCounts: { originalCount: number; rewrittenCount: number } | null;
 }
 
 export async function rewriteWithAI(
@@ -175,10 +184,14 @@ export async function rewriteWithAI(
   userKey?: UserSuppliedKey
 ): Promise<RewriteAttemptResult> {
   const providers = getConfiguredProviders(userKey);
-  if (providers.length === 0) return { result: null, fabricationBlocked: false, flaggedNames: [] };
+  if (providers.length === 0) {
+    return { result: null, fabricationBlocked: false, flaggedNames: [], skillsLossBlocked: false, skillsLossCounts: null };
+  }
 
   const prompt = buildRewritePrompt(resumeText, jobText, missingKeywords);
   let fabricationBlocked = false;
+  let skillsLossBlocked = false;
+  let skillsLossCounts: { originalCount: number; rewrittenCount: number } | null = null;
   const flaggedNames = new Set<string>();
 
   for (const provider of providers) {
@@ -202,6 +215,19 @@ export async function rewriteWithAI(
         continue;
       }
 
+      // Second hard gate: the opposite failure mode — most of the real skills list
+      // silently stripped instead of false content invented. Same principle either
+      // way: don't show the user a worse resume than they started with.
+      const skillsCheck = checkForSkillsLoss(resumeText, cleaned);
+      if (skillsCheck.suspicious) {
+        skillsLossBlocked = true;
+        skillsLossCounts = { originalCount: skillsCheck.originalCount, rewrittenCount: skillsCheck.rewrittenCount };
+        console.warn(
+          `[aiProviderRouter] ${provider.name} output rejected — skills section dropped from ${skillsCheck.originalCount} to ${skillsCheck.rewrittenCount} items`
+        );
+        continue;
+      }
+
       return {
         result: {
           rewrittenResume: cleaned,
@@ -211,6 +237,8 @@ export async function rewriteWithAI(
         },
         fabricationBlocked: false,
         flaggedNames: [],
+        skillsLossBlocked: false,
+        skillsLossCounts: null,
       };
     } catch (err) {
       console.warn(`[aiProviderRouter] ${provider.name} failed, trying next provider:`, err);
@@ -218,5 +246,11 @@ export async function rewriteWithAI(
     }
   }
 
-  return { result: null, fabricationBlocked, flaggedNames: Array.from(flaggedNames) };
+  return {
+    result: null,
+    fabricationBlocked,
+    flaggedNames: Array.from(flaggedNames),
+    skillsLossBlocked,
+    skillsLossCounts,
+  };
 }
