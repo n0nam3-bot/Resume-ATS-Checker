@@ -30,27 +30,25 @@ export async function POST(req: NextRequest) {
   }
 
   const wasConfigured = isAiConfigured(userKey);
-  const { result: aiResult, fabricationBlocked, flaggedNames } = await rewriteWithAI(
-    resumeText,
-    jobText,
-    keywords.missing ?? [],
-    userKey
-  );
+  const { result: aiResult, fabricationBlocked, flaggedNames, skillsLossBlocked, skillsLossCounts } =
+    await rewriteWithAI(resumeText, jobText, keywords.missing ?? [], userKey);
   if (aiResult) {
     return NextResponse.json(aiResult);
   }
 
-  // Three genuinely different situations were being collapsed into one message
+  // Four genuinely different situations were being collapsed into one message
   // before — split them so it's actually diagnosable from the UI instead of
-  // guesswork. Fabrication is deliberately checked first: it's a hard safety gate,
-  // not just another kind of failure, so it gets its own explicit message rather
-  // than reading as a generic "the API call failed" note.
+  // guesswork. Fabrication and skills-loss are deliberately checked first: they're
+  // hard safety/quality gates, not just another kind of failure, so each gets its
+  // own explicit message rather than reading as a generic "the API call failed" note.
   const rewrittenResume = basicMechanicalRewrite(resumeText, keywords);
   const note = fabricationBlocked
     ? `The AI-rewritten resume mentioned ${flaggedNames.length ? `"${flaggedNames.join('", "')}"` : "an employer"} as if it were one of your past jobs, but that name isn't anywhere in your real resume — a sign it invented a job rather than rewriting a real one. (This is about your resume, not the job posting — the company you're applying to doesn't need to appear in your resume.) Falling back to a basic rule-based cleanup instead — always review every line of an AI rewrite against your real resume before using it.`
-    : wasConfigured
-      ? "An AI key is configured, but every attempt failed just now (invalid key, wrong model name, or a rate limit). Falling back to a basic rule-based cleanup — check your Vercel project's Runtime Logs for the exact error."
-      : "No AI provider is configured, so this is a basic rule-based cleanup: filler phrases removed and missing keywords listed for you to consider. Add a free API key (see .env.example) for a full AI rewrite.";
+    : skillsLossBlocked
+      ? `The AI-rewritten resume dropped most of your listed skills${skillsLossCounts ? ` (kept about ${skillsLossCounts.rewrittenCount} of ${skillsLossCounts.originalCount})` : ""} instead of keeping and reorganizing them — that's a quality regression, not an improvement, so it was rejected. Falling back to a basic rule-based cleanup instead, which never removes real content.`
+      : wasConfigured
+        ? "An AI key is configured, but every attempt failed just now (invalid key, wrong model name, or a rate limit). Falling back to a basic rule-based cleanup — check your Vercel project's Runtime Logs for the exact error."
+        : "No AI provider is configured, so this is a basic rule-based cleanup: filler phrases removed and missing keywords listed for you to consider. Add a free API key (see .env.example) for a full AI rewrite.";
 
   return NextResponse.json({ rewrittenResume, usedAI: false, notes: [note] });
 }
