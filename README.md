@@ -56,9 +56,9 @@ The router tries them in that order and falls back automatically if one is rate-
 
 - The donate link is already set to `https://streamlabs.com/artofreyes/tip` in both
   `src/components/DonateButton.tsx` and `.github/FUNDING.yml` — update both if that ever changes.
-- Add real `public/icon-192.png` and `public/icon-512.png` files (any square PNG works) — the
-  manifest references them for PWA installability; the app runs fine without them, browsers just
-  won't have an icon to show.
+- `public/icon-192.png` and `public/icon-512.png` are already in place (a document + checkmark
+  mark matching the app's own navy/paper palette) — swap them for real brand art whenever you
+  want, the manifest just needs those two filenames to keep working.
 - Put your real API keys in your hosting platform's environment variables (Vercel/Netlify
   dashboard) — **not** only in GitHub Secrets, which by themselves only reach GitHub Actions
   workflows, not a deployed app. See docs §10 for the two valid patterns.
@@ -102,9 +102,13 @@ Rough steps for Vercel:
   automated check** (`src/lib/fabricationGuard.ts`) that rejects any AI output referencing an
   employer/organization name not traceable to the original resume — this was added after a
   real free-tier model fabricated entire fake jobs despite explicit prompt instructions not to.
-  **This is a safety net, not a guarantee**: it catches invented employer names specifically, not
-  every possible fabrication (e.g. a true employer given false duties). Always review the diff
-  before using AI-rewritten output — the UI now says this prominently for exactly this reason.
+  A second check (`src/lib/contentLossGuard.ts`) catches the opposite failure — the AI silently
+  stripping most of the real Skills/Core Competencies list instead of reorganizing it — added
+  after a real case where a 22-item skills section came back with only 6 generic phrases and no
+  tool names. **Both are safety nets, not guarantees**: they catch invented employers and gutted
+  skill sections specifically, not every possible content problem (e.g. a true employer given
+  false duties). Always review the diff before using AI-rewritten output — the UI says this
+  prominently for exactly this reason.
 - **The "stays loaded" persistence is per-browser, not per-account.** It's plain `localStorage`,
   so it won't follow you to a different browser or device, and clearing browser data (or "Start
   over" in the app, which does this deliberately) removes it. There's no login system here — that
